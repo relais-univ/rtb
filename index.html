@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>RTB Direct — Burkina</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <style>
+        :root { --yt-gray: #f2f2f2; --font-main: "Roboto", sans-serif; --rtb-red: #d32f2f; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: var(--font-main); -webkit-tap-highlight-color: transparent; }
+        body { background: #ffffff; color: #0f0f0f; overflow-x: hidden; padding-bottom: 30px; }
+        
+        header { display: flex; align-items: center; padding: 0 15px; background: #fff; height: 70px; position: sticky; top: 0; z-index: 1000; border-bottom: 1px solid #eee; }
+        .logo-rtb { height: 45px; width: auto; }
+        .divider { width: 1px; height: 25px; background: #ddd; margin: 0 15px; }
+        .slogan { font-size: 10px; font-weight: 700; color: #606060; text-transform: uppercase; line-height: 1.2; }
+        
+        .player-container { width: 100%; background: #000; aspect-ratio: 16/9; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        video { width: 100%; height: 100%; display: block; }
+        
+        .video-info { padding: 15px; border-bottom: 1px solid #eee; }
+        .video-title { font-size: 17px; font-weight: 700; margin-bottom: 15px; line-height: 1.4; }
+        
+        /* Barre d'action Pro */
+        .action-bar { display: flex; gap: 10px; justify-content: flex-start; overflow-x: auto; padding-bottom: 5px; scrollbar-width: none; }
+        .action-bar::-webkit-scrollbar { display: none; }
+        
+        .yt-btn { 
+            display: flex; align-items: center; gap: 8px; background: var(--yt-gray); 
+            padding: 0 18px; height: 40px; border-radius: 20px; border: none; 
+            font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s;
+        }
+        .yt-btn:active { transform: scale(0.95); background: #e5e5e5; }
+        .btn-direct { color: var(--rtb-red); background: #ffebee; border: 1px solid #ffcdd2; }
+
+        .archive-header { padding: 20px 15px 10px; font-size: 16px; font-weight: 700; }
+        .slider-wrapper { width: 100%; overflow-x: auto; scrollbar-width: none; }
+        .slider-track { display: flex; gap: 12px; padding: 0 15px 20px; width: max-content; }
+        .news-item { flex: 0 0 160px; cursor: pointer; }
+        .thumb-wrapper { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid #eee; }
+        .news-item img { width: 100%; height: 100%; object-fit: cover; }
+        .news-item span { display: block; padding-top: 8px; font-size: 12px; font-weight: 600; color: #222; }
+
+        .footer-card { margin: 15px; }
+        .wa-btn { 
+            display: flex; align-items: center; justify-content: center; gap: 10px; 
+            width: 100%; padding: 15px; border-radius: 30px; text-decoration: none; 
+            font-weight: 700; background: #25D366; color: white; border: none; 
+            box-shadow: 0 4px 10px rgba(37, 211, 102, 0.3); font-size: 15px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <img src="1001826386.png" alt="RTB" class="logo-rtb">
+        <div class="divider"></div>
+        <div id="sloganText" class="slogan">La Télévision<br>du Burkina</div>
+    </header>
+
+    <div class="player-container">
+        <video id="rtbLive" controls playsinline autoplay muted></video>
+    </div>
+
+    <div class="video-info">
+        <h1 id="mainTitle" class="video-title">RTB en Direct — La Télévision du Burkina</h1>
+        <div class="action-bar">
+            <button class="yt-btn btn-direct" onclick="revenirAuDirect()"><span>▶️</span> Direct</button>
+            
+            <button id="btnDownload" class="yt-btn" onclick="telechargerVideo()"><span>⬇️</span> Enregistrer</button>
+            
+            <button class="yt-btn" onclick="partagerApp()"><span>📤</span> Partager</button>
+        </div>
+    </div>
+
+    <div class="archive-header">Annonces & Replays</div>
+    <div class="slider-wrapper">
+        <div class="slider-track" id="sliderTrack"></div>
+    </div>
+
+    <div class="footer-card">
+        <button id="btnWA" class="wa-btn"><span>💬</span> Nous contacter sur WhatsApp</button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDmRpW6YTVDKiFGOOLgF4_WjcS-7d5lYFQ",
+            authDomain: "rtb-27dce.firebaseapp.com",
+            databaseURL: "https://rtb-27dce-default-rtdb.firebaseio.com",
+            projectId: "rtb-27dce",
+            storageBucket: "rtb-27dce.firebasestorage.app",
+            messagingSenderId: "935195587386",
+            appId: "1:935195587386:web:fc2d62a42857b1caeb9603"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        
+        const video = document.getElementById('rtbLive');
+        const mainTitle = document.getElementById('mainTitle');
+        const hls = new Hls();
+        let urlDirect = "";
+        let videoEnCours = "";
+        let downloadAuto = "non";
+
+        function chargerVideo(sourceUrl) {
+            videoEnCours = sourceUrl;
+            if (sourceUrl.includes('.m3u8')) {
+                if (Hls.isSupported()) {
+                    hls.loadSource(sourceUrl);
+                    hls.attachMedia(video);
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = sourceUrl;
+                }
+            } else {
+                if(hls) hls.destroy(); 
+                video.src = sourceUrl;
+            }
+            video.play().catch(() => {
+                console.log("Lecture auto bloquée par le navigateur");
+            });
+        }
+
+        db.ref('rtb_config').on('value', (snap) => {
+            const val = snap.val() || {};
+            urlDirect = val.directUrl;
+            downloadAuto = val.allowDownload || "non";
+            document.getElementById('sloganText').innerHTML = val.slogan || "La Télévision<br>du Burkina";
+            
+            // WhatsApp Pro : Ouvre directement l'application avec un message
+            document.getElementById('btnWA').onclick = () => {
+                const text = encodeURIComponent("Bonjour RTB, je vous contacte depuis l'application...");
+                window.open(`https://wa.me/${val.whatsapp}?text=${text}`, '_blank');
+            };
+            
+            if(!videoEnCours || videoEnCours === urlDirect) {
+                revenirAuDirect();
+            }
+        });
+
+        db.ref('archives').on('value', (snap) => {
+            const data = snap.val();
+            const track = document.getElementById('sliderTrack');
+            track.innerHTML = "";
+            if(data) {
+                Object.keys(data).forEach(key => {
+                    const item = data[key];
+                    track.innerHTML += `
+                        <div class="news-item" onclick="lireArchive('${item.url}', '${item.title}')">
+                            <div class="thumb-wrapper"><img src="${item.thumb}" onerror="this.src='https://via.placeholder.com/160x90?text=RTB'"></div>
+                            <span>${item.title}</span>
+                        </div>`;
+                });
+            }
+        });
+
+        function lireArchive(url, titre) {
+            chargerVideo(url);
+            mainTitle.innerText = "Replay : " + titre;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function revenirAuDirect() {
+            chargerVideo(urlDirect);
+            mainTitle.innerText = "RTB en Direct — La Télévision du Burkina";
+        }
+
+        // PARTAGER : Ouvre le menu natif (WhatsApp, FB, TikTok, etc.)
+        async function partagerApp() {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'RTB Burkina',
+                        text: 'Regardez la RTB en direct sur votre mobile !',
+                        url: window.location.href
+                    });
+                } catch (err) {
+                    console.log("Partage annulé");
+                }
+            } else {
+                alert("Lien copié : " + window.location.href);
+            }
+        }
+
+        // ENREGISTRER : Gère l'autorisation de la RTB
+        function telechargerVideo() {
+            if (downloadAuto === "non") {
+                alert("🔒 Désolé, l'enregistrement de ce contenu n'est pas autorisé par la RTB.");
+                return;
+            }
+
+            if (videoEnCours) {
+                // Tente un téléchargement propre
+                const link = document.createElement('a');
+                link.href = videoEnCours;
+                link.download = "RTB_Video.mp4";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Fallback pour les flux m3u8 ou navigateurs mobiles
+                setTimeout(() => {
+                    window.open(videoEnCours, '_blank');
+                }, 1000);
+            }
+        }
+    </script>
+</body>
+  </html>
+  
